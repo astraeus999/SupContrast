@@ -71,9 +71,10 @@ class Bottleneck(nn.Module):
         else:
             return out
 
+### make the in_channel to be 2
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, in_channel=3, zero_init_residual=False):
+    def __init__(self, block, num_blocks, in_channel=2, zero_init_residual=False):
         super(ResNet, self).__init__()
         self.in_planes = 64
 
@@ -122,7 +123,7 @@ class ResNet(nn.Module):
         out = self.avgpool(out)
         out = torch.flatten(out, 1)
         return out
-
+## this net is too big....
 
 def resnet18(**kwargs):
     return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
@@ -161,7 +162,7 @@ class LinearBatchNorm(nn.Module):
         x = x.view(-1, self.dim)
         return x
 
-
+#### there is 4 different versions of resnet, resnet18, resnet34, resnet50, resnet101
 class SupConResNet(nn.Module):
     """backbone + projection head"""
     def __init__(self, name='resnet50', head='mlp', feat_dim=128):

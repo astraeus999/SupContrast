@@ -8,7 +8,7 @@ import math
 import torch
 import torch.backends.cudnn as cudnn
 
-from main_ce import set_loader
+from main_ce import set_loader, set_loader_as
 from util import AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate, accuracy
 from util import set_optimizer
@@ -94,6 +94,8 @@ def parse_option():
         opt.n_cls = 10
     elif opt.dataset == 'cifar100':
         opt.n_cls = 100
+    elif opt.dataset == 'image':
+        opt.n_cls = 2
     else:
         raise ValueError('dataset not supported: {}'.format(opt.dataset))
 
@@ -231,7 +233,7 @@ def main():
     opt = parse_option()
 
     # build data loader
-    train_loader, val_loader = set_loader(opt)
+    train_loader, val_loader = set_loader_as(opt)
 
     # build model and criterion
     model, classifier, criterion = set_model(opt)

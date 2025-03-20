@@ -1,4 +1,4 @@
-from __future__ import print_function
+# from __future__ import print_function
 
 import os
 import sys
@@ -6,7 +6,7 @@ import argparse
 import time
 import math
 
-import tensorboard_logger as tb_logger
+# import tensorboard_logger as tb_logger
 import torch
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
@@ -23,6 +23,8 @@ try:
 except ImportError:
     pass
 
+
+#### this is an unsupervised model for downstream tasks (SupCon)
 
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
@@ -51,7 +53,7 @@ def parse_option():
                         help='momentum')
 
     # model dataset
-    parser.add_argument('--model', type=str, default='resnet50')
+    parser.add_argument('--model', type=str, default='resnet18')### changed
     parser.add_argument('--dataset', type=str, default='cifar10',
                         choices=['cifar10', 'cifar100', 'path'], help='dataset')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
@@ -80,14 +82,15 @@ def parse_option():
     opt = parser.parse_args()
 
     # check if dataset is path that passed required arguments
-    if opt.dataset == 'path':
-        assert opt.data_folder is not None \
-            and opt.mean is not None \
-            and opt.std is not None
+    #just delete this for now
+    # if opt.dataset == 'path':
+    #     assert opt.data_folder is not None \
+    #         and opt.mean is not None \
+    #         and opt.std is not None
 
     # set the path according to the environment
     if opt.data_folder is None:
-        opt.data_folder = './datasets/'
+        opt.data_folder = './images/'
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
     opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
 
@@ -175,6 +178,70 @@ def set_loader(opt):
 
     return train_loader
 
+### this is specifically for our astro dataset, and our data is not RGB
+from torch.utils.data import Dataset
+from PIL import Image
+
+class UnsupervisedImageDataset(Dataset):
+    def __init__(self, root, transform=None):
+        self.root = root
+        self.image_paths = [os.path.join(root, fname) for fname in os.listdir(root) if fname.endswith(('png', 'jpg', 'jpeg', 'bmp', 'tiff'))]
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.image_paths)
+
+    def __getitem__(self, idx):
+        img_path = self.image_paths[idx]
+        image = Image.open(img_path).convert('RGB')  # Convert to RGB if needed
+        if self.transform:
+            image = self.transform(image)
+        return image
+
+
+def set_loader_as(opt):
+    # construct data loader for unlabeled data
+    mean = (0.5,)
+    std = (0.5,)
+    normalize = transforms.Normalize(mean=mean, std=std)
+
+    train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
+        transforms.RandomHorizontalFlip(),
+        transforms.RandomApply([
+            transforms.ColorJitter(brightness=0.4, contrast=0.4)
+        ], p=0.8),
+        transforms.RandomGrayscale(p=1.0),  # Ensure the image remains grayscale
+        transforms.ToTensor(),
+        normalize,
+    ])
+
+    # val_transform = transforms.Compose([
+    #     transforms.ToTensor(),
+    #     normalize,
+    # ])
+
+    train_dataset = UnsupervisedImageDataset(root=opt.data_folder,
+                                             transform=TwoCropTransform(train_transform))
+    # labeled_dataset = datasets.ImageFolder(root=os.path.join(opt.data_folder, 'labeled'),
+    #                                        transform=train_transform)
+    # val_dataset = datasets.ImageFolder(root=os.path.join(opt.data_folder, 'val'),
+    #                                    transform=val_transform)
+
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset, batch_size=opt.batch_size, shuffle=True,
+        num_workers=opt.num_workers, pin_memory=True)
+    # labeled_loader = torch.utils.data.DataLoader(
+    #     labeled_dataset, batch_size=opt.batch_size, shuffle=True,
+    #     num_workers=opt.num_workers, pin_memory=True)
+    # val_loader = torch.utils.data.DataLoader(
+    #     val_dataset, batch_size=256, shuffle=False,
+    #     num_workers=opt.num_workers, pin_memory=True)
+
+    return train_loader
+
+
+
 
 def set_model(opt):
     model = SupConResNet(name=opt.model)
@@ -255,8 +322,8 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
 def main():
     opt = parse_option()
 
-    # build data loader
-    train_loader = set_loader(opt)
+    # build data loader  # changed it to set_loader_as
+    train_loader = set_loader_as(opt)
 
     # build model and criterion
     model, criterion = set_model(opt)
@@ -265,26 +332,35 @@ def main():
     optimizer = set_optimizer(opt, model)
 
     # tensorboard
-    logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
+    log_file_path = os.path.join(opt.save_folder, 'training_log.txt')
+    with open(log_file_path, 'w') as log_file:
+        log_file.write("Epoch\tLoss\tLearning_Rate\n")
+    
+    
+    loss_file_path = os.path.join(opt.save_folder, 'training_loss.txt')
+    with open(loss_file_path, 'w') as loss_file:
 
     # training routine
-    for epoch in range(1, opt.epochs + 1):
-        adjust_learning_rate(opt, optimizer, epoch)
+        for epoch in range(1, opt.epochs + 1):
+            adjust_learning_rate(opt, optimizer, epoch)
 
-        # train for one epoch
-        time1 = time.time()
-        loss = train(train_loader, model, criterion, optimizer, epoch, opt)
-        time2 = time.time()
-        print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
+            # train for one epoch
+            time1 = time.time()
+            loss = train(train_loader, model, criterion, optimizer, epoch, opt)
+            time2 = time.time()
+            print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
 
-        # tensorboard logger
-        logger.log_value('loss', loss, epoch)
-        logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
-
-        if epoch % opt.save_freq == 0:
-            save_file = os.path.join(
-                opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
-            save_model(model, optimizer, opt, epoch, save_file)
+            # tensorboard logger
+# Save loss and learning rate to the log file
+            learning_rate = optimizer.param_groups[0]['lr']
+            log_file.write(f"Epoch {epoch}\tLoss: {loss:.4f}\tLearning Rate: {learning_rate:.6f}\n")
+            log_file.flush()  # Ensure the data is written to the file immediately
+            
+            
+            if epoch % opt.save_freq == 0:
+                save_file = os.path.join(
+                    opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
+                save_model(model, optimizer, opt, epoch, save_file)
 
     # save the last model
     save_file = os.path.join(

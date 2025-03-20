@@ -1,0 +1,1 @@
+python main_supcon.py --method SupCon --dataset path --epochs 100 --lr_decay_epochs 90 --batch_size 4 tj--data_folder /home/fcao017/SupContrast/images

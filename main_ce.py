@@ -167,6 +167,8 @@ def set_loader(opt):
     return train_loader, val_loader
 
 
+
+
 def set_model(opt):
     model = SupCEResNet(name=opt.model, num_classes=opt.n_cls)
     criterion = torch.nn.CrossEntropyLoss()
